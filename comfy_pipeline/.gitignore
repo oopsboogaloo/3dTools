@@ -1,0 +1,6 @@
+drafts/*
+final/*
+!drafts/.gitkeep
+!final/.gitkeep
+__pycache__/
+*.pyc

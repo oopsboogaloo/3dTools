@@ -1,0 +1,106 @@
+{
+  "10": {
+    "class_type": "UNETLoader",
+    "_meta": { "title": "unet_loader" },
+    "inputs": {
+      "unet_name": "flux2-dev-fp8.safetensors",
+      "weight_dtype": "fp8_e4m3fn"
+    }
+  },
+  "11": {
+    "class_type": "DualCLIPLoader",
+    "_meta": { "title": "clip_loader" },
+    "inputs": {
+      "clip_name1": "clip_l.safetensors",
+      "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
+      "type": "flux"
+    }
+  },
+  "12": {
+    "class_type": "VAELoader",
+    "_meta": { "title": "vae_loader" },
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    }
+  },
+  "1": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "load_source_image" },
+    "inputs": {
+      "image": "placeholder.png"
+    }
+  },
+  "2": {
+    "class_type": "VAEEncode",
+    "_meta": { "title": "vae_encode" },
+    "inputs": {
+      "pixels": ["1", 0],
+      "vae": ["12", 0]
+    }
+  },
+  "13": {
+    "class_type": "LatentUpscaleBy",
+    "_meta": { "title": "latent_upscale" },
+    "inputs": {
+      "samples": ["2", 0],
+      "upscale_method": "nearest-exact",
+      "scale_by": 1.5
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "positive_prompt" },
+    "inputs": {
+      "text": "",
+      "clip": ["11", 0]
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "negative_prompt" },
+    "inputs": {
+      "text": "",
+      "clip": ["11", 0]
+    }
+  },
+  "22": {
+    "class_type": "FluxGuidance",
+    "_meta": { "title": "flux_guidance" },
+    "inputs": {
+      "guidance": 3.5,
+      "conditioning": ["6", 0]
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "_meta": { "title": "refine_sampler" },
+    "inputs": {
+      "seed": 0,
+      "steps": 20,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.4,
+      "model": ["10", 0],
+      "positive": ["22", 0],
+      "negative": ["7", 0],
+      "latent_image": ["13", 0]
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "_meta": { "title": "vae_decode" },
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["12", 0]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "_meta": { "title": "save_final" },
+    "inputs": {
+      "images": ["8", 0],
+      "filename_prefix": "final"
+    }
+  }
+}
