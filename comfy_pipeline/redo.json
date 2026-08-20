@@ -1,0 +1,28 @@
+{
+  "_comment": "Subjects where no draft in the batch was acceptable. Fix the prompt in subjects.py, then: python build_set.py --force --only <slug> ...",
+  "rejected": {
+    "dryosaurus": "Rendered a literal DEER with a saddle. Cause: 'about the size of a large deer'.",
+    "protoceratops": "Rendered a hairless SHEEP with a vestigial frill. Cause: 'sheep-sized'.",
+    "micro_raptor": "Rendered a plain CROW. Cause: 'crow-sized'; the four feathered limbs never appeared.",
+    "deinonychus": "Rendered a WOLF/coyote. Cause: 'the size of a large wolf'.",
+    "iguanodon": "Rendered a hairless BULL/warthog. No mammal comparison used, but 'heavy-bodied herbivore on all fours' lands in cattle territory anyway. Spiked thumbs absent.",
+    "utahraptor": "Rendered a giant EAGLE with a saddle. Cause: the word 'raptor' collides with bird-of-prey. Sickle claws absent; the picket line behind is full of horses.",
+    "diplodocus": "Neck far too short - reads as a hippo/camel hybrid, not a sauropod. Frame 1 also has a modern car in the background.",
+    "thomas_reed": "Reads about 4 rather than 7, and the pose (squatting over a basket) is unfortunate. Anachronistic footwear."
+  },
+  "marginal": {
+    "ankylosaurus": "Too upright and theropod-headed; no club tail. Usable but not right.",
+    "apatosaurus": "Same short-neck problem as diplodocus, though less severe. Frame 2 is passable.",
+    "pip_aquilops": "Charming, but reads as a small bird rather than a horned dinosaur - no frill, no beak ridge.",
+    "stegosaurus": "Body and plates correct, but wearing a toothy predator's head.",
+    "kentrosaurus": "Same predator-head problem as stegosaurus.",
+    "triceratops": "Good, but frames 0 and 1 carry faint text artifacts along the bottom edge."
+  },
+  "systemic": {
+    "mammal_size_comparison": "NEVER describe a dinosaur by comparison to a mammal. Every single outright failure used one, and Klein rendered the mammal. Give absolute measurements and explicit reptile/dinosaur anatomy instead.",
+    "raptor_word_collision": "'Raptor' means bird-of-prey to the model. Say 'dromaeosaur', name the sickle claw, and say 'not a bird'.",
+    "sauropod_necks": "Sauropods come out with necks far too short. Needs explicit 'neck as long as its body' phrasing.",
+    "herbivore_heads": "Stegosaurs and kentrosaurs get theropod heads with teeth. Specify a small beaked head on a long neck.",
+    "costume_period": "NOT A DEFECT - ACCEPTED BY CHLOE 2026-08-20. Clothing reads 1930s-40s rather than 1870s. This is a pulp adventure in the spirit of the films it draws on, which are full of the same anachronism. Do NOT 'fix' this in future runs."
+  }
+}

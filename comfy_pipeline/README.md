@@ -10,15 +10,22 @@ python refine.py --image ./drafts/pick.png --prompt "..."  # -> ./final/*.png
 
 Runs **FLUX.2 Klein 4B** (Apache 2.0, fits in 24 GB, 4-step drafts).
 
+> **Writing prompts? Read [`HOWTOPROMPT.md`](HOWTOPROMPT.md) first.** Klein has
+> several counter-intuitive failure modes — it captions images when you name a
+> character, renders a deer when you say "the size of a large deer", and ages
+> everyone up by 10-20 years. Each rule there cost a failed batch to learn.
+
 ## Status
 
 The workflow JSON here is derived from the FLUX.2 graphs that ship inside
 ComfyUI itself (`comfyui_workflow_templates_json/templates/image_flux2_*.json`),
 with every node's inputs checked against the live `/object_info` of the running
-server — not hand-guessed. The scripts compile and the JSON validates.
+server — not hand-guessed.
 
-Still to confirm on a real run: an end-to-end `generate.py` → `refine.py` pass
-with weights present.
+**Proven end to end.** As of 2026-08-20 the pipeline has produced the complete
+Dino Weird West set: 80 subjects generated, culled, upscaled, grained, labelled
+and cut into battlemap tokens — 160 files. Generation of all 80 at batch-of-4
+took 9.9 minutes on the 4090 with no failures.
 
 ## This machine
 
@@ -178,6 +185,26 @@ with clichés when you leave them open:
 - Name the background (**"orbiting a blue planet"**) or you get a generic
   starfield.
 
+### Two more Klein habits, found while shooting character portraits
+
+**Naming a character in the prompt makes Klein caption the image.** A prompt
+starting "portrait of Josiah Coyle, a heavily built blacksmith..." rendered the
+words JOSIAH COYLE burned into the plate, plus smaller illegible text in other
+corners of the same batch. Describing the person and omitting the proper name
+removes it entirely — cheaper than buying a negative prompt, which costs you the
+distilled model's filmic look.
+
+**Klein ages people up by roughly 10–20 years.** "A woman in her mid thirties"
+came back consistently at 45–50; "an outlaw aged about forty" came back at
+55–60, and heavyset rather than broad. Compensate by asking for someone
+noticeably younger than you want, and describe build separately from age —
+"broad-shouldered" alone drifts toward "stout".
+
+**Hands deform in standing poses far more than seated ones.** Seated, waist-up,
+hands resting open on the knees is reliable; standing three-quarter shots with
+hands near a belt or holster produced merged or extra fingers in most of a
+batch of 4. Worth defaulting to seated framing for anything you need in volume.
+
 ## Resolution ceilings — measured, not guessed
 
 VRAM is **not** the limiting factor. Klein was trained around 1024² and loses
@@ -261,6 +288,64 @@ it does recover most of the filmic quality while keeping the corrected feet.
 
 For pure aesthetics though, the best single result in testing was still the
 all-distilled chain at 2304².
+
+## Step 8 — filmgrain.py (grain, in post)
+
+Klein renders *smooth*. Asking for "heavy coarse film grain" in the prompt gets
+you more collodion process artefacts — scratches, tide marks, plate damage — but
+barely moves the actual grain texture, and no amount of rephrasing fixes that.
+Grain is therefore added after the fact, where it's a parameter rather than a
+plea:
+
+```powershell
+D:\Creative\AI\comfy_pipeline-venv\Scripts\python.exe filmgrain.py `
+  D:\Creative\AI\outputs\final\pick.png --strength 0.12
+```
+
+The grain is **midtone-weighted** — `4L(1-L)`, peaking at mid-grey and falling to
+zero in blown highlights and blocked shadows — because that's how silver halide
+actually behaves. Flat additive noise across the whole frame is the tell that
+grain was faked. It's also generated at reduced resolution and scaled up, so
+grains clump rather than sitting one per pixel.
+
+| `--strength` | Look |
+|---|---|
+| 0.06 | subtle, visible only at 1:1 |
+| **0.12** | **default** — reads as film at both 1:1 and fit-to-screen |
+| 0.20 | coarse, pushing toward noise on large flat areas |
+
+**Run it last, after `upscale.py`.** Grain is added in pixels, so grain applied
+before an upscale gets magnified along with everything else and turns to mush.
+
+## The quality loop
+
+Generation is effectively free on a local 4090; judgement is the scarce resource.
+The pipeline is built around that asymmetry:
+
+```
+subjects.py ──▶ build_set.py ──▶ review_sheets.py ──▶ picks.json
+                                                          │
+                                                          ▼
+                       scores.json ◀── score_sheets.py ◀── finish_set.py
+                            │
+                            └──▶ build_set.py --below 4   (re-roll what failed)
+```
+
+`build_set.py --below 4` regenerates every subject scored under 4 in
+`scores.json`, so scoring and re-rolling is one command rather than a manual list.
+
+**Batch size is set by subject kind, not by taste** (`subjects.BATCH_BY_KIND`):
+
+| Kind | Batch | Why |
+|---|---|---|
+| person | 4 | Seated waist-up, hands on knees. **0 anatomical artefacts in 59 subjects.** |
+| creature | 12 | Full body. **10 of 21 came back with an extra, fused or detached limb.** |
+
+Anatomical artefacts — a third arm, a floating claw, fused feet — are the single
+worst defect, because they are the tell that pulls players out of the fiction.
+They outrank fidelity and even setting consistency: a horse in the background of
+a dinosaur western matters less than a fused foot. See `HOWTOPROMPT.md` rule 5,
+which explains why this is a framing problem rather than a prompting one.
 
 ## Step 3 & 4 — The two workflows
 
@@ -382,7 +467,7 @@ instead of hanging. If you hit this in practice, lower `--batch`,
 
 - Picker UI — drop `./drafts/*.png` into a Claude chat instead.
 - Multi-GPU / queue workers — single 4090, one job at a time.
-- LoRA training for a consistent Selovast/cartography house style — worth
+- LoRA training for a consistent cartography house style — worth
   doing later, out of scope here.
 
 ## Layout
@@ -394,6 +479,15 @@ comfy_pipeline/            (on C:, in OneDrive — backed up)
   generate.py              batch-of-4 CLI
   refine.py                diffusion refine/upscale CLI (has a coherence ceiling)
   upscale.py               ESRGAN upscale CLI (no ceiling, structure-preserving)
+  filmgrain.py             post-process film grain (run last, at final resolution)
+  subjects.py              Dino Weird West subject manifest (80 entries)
+  build_set.py             batch-generate the whole manifest (resumable)
+  review_sheets.py         contact sheets for culling a batch
+  score_sheets.py          grids of FINISHED portraits, for quality scoring
+  finish_set.py            picked draft -> final portrait + battlemap token
+  picks.json               slug -> winning draft index
+  scores.json              slug -> quality score 1-5, with reasons
+  HOWTOPROMPT.md           Klein's failure modes and how to avoid them
   workflows/
     batch_generate_api.json
     refine_upscale_api.json
