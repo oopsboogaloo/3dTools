@@ -13,8 +13,18 @@ import datetime as dt
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 from client import ComfyClient, ComfyClientError, ComfyExecutionError
-from workflow_utils import find_node_by_title, load_workflow, random_seed, set_text, slugify
+from workflow_utils import (
+    MODEL_PRESETS,
+    default_out_dir,
+    find_node_by_title,
+    load_workflow,
+    random_seed,
+    set_text,
+    slugify,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -23,17 +33,22 @@ def build_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--image", required=True, help="Path to the draft image to refine (e.g. from ./drafts).")
     p.add_argument("--prompt", required=True, help="Positive prompt (usually the same one used to draft it).")
-    p.add_argument("--negative", default="")
+    p.add_argument("--negative", default="", help="Negative prompt; effective because refine runs the base model at cfg > 1.")
     p.add_argument("--denoise", type=float, default=0.4, help="0.3-0.5 keeps composition, adds detail.")
     p.add_argument("--upscale-by", type=float, default=1.5, help="Latent upscale factor.")
-    p.add_argument("--steps", type=int, default=20)
-    p.add_argument("--cfg", type=float, default=1.0)
-    p.add_argument("--guidance", type=float, default=3.5, help="FluxGuidance value.")
+    p.add_argument(
+        "--model",
+        choices=sorted(MODEL_PRESETS),
+        default="base",
+        help="base (default) does real CFG, so negative prompts and detail recovery work. "
+        "distilled is faster but ignores the negative prompt.",
+    )
+    p.add_argument("--steps", type=int, default=None, help="Override the preset step count.")
+    p.add_argument("--cfg", type=float, default=None, help="Override the preset CFG scale. At 1.0 the negative prompt is ignored.")
     p.add_argument("--sampler", default="euler")
-    p.add_argument("--scheduler", default="simple")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--workflow", default=str(HERE / "workflows" / "refine_upscale_api.json"))
-    p.add_argument("--out-dir", default=str(HERE / "final"))
+    p.add_argument("--out-dir", default=default_out_dir("final"), help="Default: %(default)s")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8188)
     return p.parse_args()
@@ -47,7 +62,19 @@ def main() -> int:
         print(f"ERROR: source image not found: {source_path}", file=sys.stderr)
         return 1
 
+    preset = MODEL_PRESETS[args.model]
+    steps = args.steps if args.steps is not None else preset["steps"]
+    cfg = args.cfg if args.cfg is not None else preset["cfg"]
+
+    if args.negative and cfg == 1.0:
+        print(
+            f"WARNING: --negative is ignored at cfg 1.0 (model '{args.model}'). "
+            f"Use --model base for negative prompts.",
+            file=sys.stderr,
+        )
+
     workflow = load_workflow(Path(args.workflow))
+    workflow[find_node_by_title(workflow, "unet_loader")]["inputs"]["unet_name"] = preset["unet"]
     client = ComfyClient(host=args.host, port=args.port)
 
     print(f"Checking ComfyUI at {client.base_url} ...")
@@ -74,19 +101,26 @@ def main() -> int:
     upscale_node = find_node_by_title(workflow, "latent_upscale")
     workflow[upscale_node]["inputs"]["scale_by"] = args.upscale_by
 
-    guidance_node = find_node_by_title(workflow, "flux_guidance")
-    workflow[guidance_node]["inputs"]["guidance"] = args.guidance
+    # The Flux2 scheduler picks its sigma shift from the resolution, so it has to be
+    # told the *post-upscale* size, not the source size.
+    with Image.open(source_path) as im:
+        src_w, src_h = im.size
+    target_w = int(src_w * args.upscale_by)
+    target_h = int(src_h * args.upscale_by)
+    print(f"Source {src_w}x{src_h} -> refine target {target_w}x{target_h}")
 
-    sampler_node = find_node_by_title(workflow, "refine_sampler")
+    scheduler_node = find_node_by_title(workflow, "scheduler")
+    workflow[scheduler_node]["inputs"].update(steps=steps, width=target_w, height=target_h)
+
+    # Partial denoise is done by taking the tail of the sigma schedule, since
+    # SamplerCustomAdvanced has no denoise input of its own.
+    workflow[find_node_by_title(workflow, "denoise_split")]["inputs"]["denoise"] = args.denoise
+
+    workflow[find_node_by_title(workflow, "sampler_select")]["inputs"]["sampler_name"] = args.sampler
+    workflow[find_node_by_title(workflow, "guider")]["inputs"]["cfg"] = cfg
+
     seed = args.seed if args.seed is not None else random_seed()
-    workflow[sampler_node]["inputs"].update(
-        seed=seed,
-        steps=args.steps,
-        cfg=args.cfg,
-        sampler_name=args.sampler,
-        scheduler=args.scheduler,
-        denoise=args.denoise,
-    )
+    workflow[find_node_by_title(workflow, "noise_seed")]["inputs"]["noise_seed"] = seed
 
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     slug = slugify(args.prompt)
@@ -95,7 +129,10 @@ def main() -> int:
     save_node = find_node_by_title(workflow, "save_final")
     workflow[save_node]["inputs"]["filename_prefix"] = prefix
 
-    print(f"Queuing refine pass (denoise={args.denoise}, upscale_by={args.upscale_by}, seed={seed}) ...")
+    print(
+        f"Queuing refine pass ({args.model}, {steps} steps, cfg {cfg}, "
+        f"denoise={args.denoise}, upscale_by={args.upscale_by}, seed={seed}) ..."
+    )
     try:
         history_entry = client.run(workflow)
     except ComfyExecutionError as e:

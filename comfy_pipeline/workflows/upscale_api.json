@@ -1,0 +1,41 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "load_source_image" },
+    "inputs": {
+      "image": "placeholder.png"
+    }
+  },
+  "2": {
+    "class_type": "UpscaleModelLoader",
+    "_meta": { "title": "upscale_model_loader" },
+    "inputs": {
+      "model_name": "RealESRGAN_x4.pth"
+    }
+  },
+  "3": {
+    "class_type": "ImageUpscaleWithModel",
+    "_meta": { "title": "upscale" },
+    "inputs": {
+      "upscale_model": ["2", 0],
+      "image": ["1", 0]
+    }
+  },
+  "4": {
+    "class_type": "ImageScaleBy",
+    "_meta": { "title": "final_scale" },
+    "inputs": {
+      "image": ["3", 0],
+      "upscale_method": "lanczos",
+      "scale_by": 1.0
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "_meta": { "title": "save_upscaled" },
+    "inputs": {
+      "images": ["4", 0],
+      "filename_prefix": "upscaled"
+    }
+  }
+}

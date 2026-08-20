@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import unicodedata
@@ -9,6 +10,28 @@ from pathlib import Path
 from typing import Any
 
 Workflow = dict[str, Any]
+
+# Generated images are large and don't want backing up, so they go to D: rather
+# than living next to the code in OneDrive. Override with COMFY_PIPELINE_OUT.
+# Falls back to a dir beside the scripts if that root isn't available, so the
+# pipeline still works if the repo is cloned somewhere without a D: drive.
+DEFAULT_OUT_ROOT = r"D:\Creative\AI\outputs"
+
+
+def default_out_dir(name: str) -> str:
+    root = Path(os.environ.get("COMFY_PIPELINE_OUT", DEFAULT_OUT_ROOT))
+    if not root.drive or Path(root.drive + "\\").exists():
+        return str(root / name)
+    return str(Path(__file__).resolve().parent / name)
+
+# FLUX.2 Klein ships in two flavours. The distilled model is guidance-free: it runs
+# at cfg 1.0, which means the negative prompt is mathematically ignored. The base
+# model does real classifier-free guidance, so negatives work but it needs ~5x the
+# steps. Drafts want distilled; anything needing a negative prompt wants base.
+MODEL_PRESETS: dict[str, dict[str, Any]] = {
+    "distilled": {"unet": "flux-2-klein-4b.safetensors", "steps": 4, "cfg": 1.0},
+    "base": {"unet": "flux-2-klein-base-4b.safetensors", "steps": 20, "cfg": 5.0},
+}
 
 
 def load_workflow(path: Path) -> Workflow:
